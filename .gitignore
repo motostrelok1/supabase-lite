@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+*.dump
+*.backup
+*.sql.gz
+*.tar
+*.key
+*.pem
+*.p12
+secrets/
+backups/
+data/
+postgres-data/
+storage-data/
+!docs/
