@@ -16,6 +16,8 @@
 
 **Внимание:** этого недостаточно для развёртывания: переносимый Compose, системный bootstrap и clean-room тесты ещё не сделаны.
 
+> **Experimental Compose:** добавлен кандидат `compose.yml` с семью сервисами. Он не является рабочим установщиком: отсутствует проверенный DB bootstrap, gateway authentication, Realtime tenant setup и E2E. **Не запускать на production**. Подробности: [Compose candidate](docs/COMPOSE_CANDIDATE.md).
+
 ## План релиза v0.1
 
 1. Получить **обезличенную** копию двух Docker Compose файлов, список закреплённых image tags и перечень **имён** переменных окружения с существующего VDS.

@@ -1,0 +1,119 @@
+# EXPERIMENTAL CONFIG CANDIDATE - NOT PRODUCTION READY.
+# Missing verified Supabase DB bootstrap, Storage/realtime tenant init and E2E validation.
+name: ${COMPOSE_PROJECT_NAME:?Set a unique Docker Compose project name}
+services:
+  db:
+    image: supabase/postgres:17.6.1.136
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:?required}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  auth:
+    image: supabase/gotrue:v2.196.0
+    restart: unless-stopped
+    depends_on:
+      db: {condition: service_healthy}
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: "9999"
+      API_EXTERNAL_URL: ${API_PUBLIC_URL:?required}/auth/v1
+      GOTRUE_SITE_URL: ${SITE_URL:?required}
+      GOTRUE_JWT_SECRET: ${JWT_SECRET:?required}
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${AUTH_DB_PASSWORD:?required}@db:5432/${POSTGRES_DB:?required}?sslmode=disable
+      GOTRUE_DISABLE_SIGNUP: "true"
+    networks: [backend]
+
+  rest:
+    image: postgrest/postgrest:v14.17
+    restart: unless-stopped
+    depends_on:
+      db: {condition: service_healthy}
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${AUTHENTICATOR_PASSWORD:?required}@db:5432/${POSTGRES_DB:?required}
+      PGRST_DB_SCHEMAS: public,storage,graphql_public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET:?required}
+    networks: [backend]
+
+  realtime:
+    image: supabase/realtime:v2.134.10
+    restart: unless-stopped
+    depends_on:
+      db: {condition: service_healthy}
+    environment:
+      PORT: "4000"
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: supabase_admin
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      DB_NAME: ${POSTGRES_DB:?required}
+      DB_ENC_KEY: ${REALTIME_DB_ENC_KEY:?required}
+      API_JWT_SECRET: ${JWT_SECRET:?required}
+      SECRET_KEY_BASE: ${REALTIME_SECRET_KEY_BASE:?required}
+      ERL_AFLAGS: "-proto_dist inet_tcp"
+      RLIMIT_NOFILE: "10000"
+    networks: [backend]
+
+  storage:
+    image: supabase/storage-api:v1.74.0
+    restart: unless-stopped
+    depends_on:
+      db: {condition: service_healthy}
+    environment:
+      ANON_KEY: ${ANON_KEY:?required}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY:?required}
+      POSTGREST_URL: http://rest:3000
+      PGRST_JWT_SECRET: ${JWT_SECRET:?required}
+      DATABASE_URL: postgres://supabase_storage_admin:${STORAGE_DB_PASSWORD:?required}@db:5432/${POSTGRES_DB:?required}
+      FILE_SIZE_LIMIT: ${STORAGE_FILE_SIZE_LIMIT:-52428800}
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      REGION: local
+      GLOBAL_S3_BUCKET: stub
+    volumes:
+      - storage-data:/var/lib/storage
+    networks: [backend]
+
+  functions:
+    image: supabase/edge-runtime:v1.76.2
+    restart: unless-stopped
+    command: ["start", "--main-service", "/home/deno/functions/main"]
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?required}
+      SUPABASE_URL: http://api-gw:8000
+      SUPABASE_ANON_KEY: ${ANON_KEY:?required}
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY:?required}
+    volumes:
+      - ./functions:/home/deno/functions:ro
+    networks: [backend]
+
+  api-gw:
+    image: envoyproxy/envoy:v1.39.1
+    restart: unless-stopped
+    depends_on: [auth, rest, storage, realtime, functions]
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml"]
+    volumes:
+      - ./config/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-28100}:8000"
+    networks: [backend]
+
+networks:
+  backend:
+    internal: false
+
+volumes:
+  postgres-data:
+  storage-data:
