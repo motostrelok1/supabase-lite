@@ -1,0 +1,27 @@
+name: Lite Static Validation
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate template
+        run: python3 scripts/validate-template.py
+      - name: Bash syntax
+        run: bash -n scripts/*.sh
+      - name: Python syntax
+        run: python3 -m py_compile scripts/*.py
+      - name: Ensure secrets and dumps are not tracked
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -E '(^|/)(\.env|secrets|backups|data)/|\.(dump|backup|pem|key)$'; then
+            echo 'FAIL: forbidden file tracked'
+            exit 1
+          fi
+          echo 'PASS: no forbidden paths tracked'
